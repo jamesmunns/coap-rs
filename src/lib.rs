@@ -27,9 +27,9 @@
 
 //! use std::io;
 //! use coap::packet::*;
-//! use coap::{CoAPServer, CoAPClient};
+//! use coap::{CoAPServer, CoAPResponse};
 
-//! fn request_handler(req: Packet, _resp: CoAPClient) {
+//! fn request_handler(req: Packet, _resp: CoAPResponse) {
 //! 	println!("Receive request: {:?}", req);
 //! }
 

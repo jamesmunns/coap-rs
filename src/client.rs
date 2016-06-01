@@ -165,7 +165,7 @@ mod test {
 	use std::time::Duration;
 	use std::io::ErrorKind;
 	use packet::{Packet, PacketType};
-	use server::CoAPServer;
+	use server::{CoAPServer, CoAPResponse};
 
 	#[test]
 	fn test_request_error_url() {
