@@ -82,7 +82,7 @@ impl CoAPClient {
 				try!(client.set_receive_timeout(timeout));
 				match client.receive() {
 				 	Ok(receive_packet) => {
-				 		if receive_packet.header.get_message_id() == message_id 
+				 		if receive_packet.header.get_message_id() == message_id
 				 			&& *receive_packet.get_token() == token {
 				 				return Ok(receive_packet)
 				 			} else {

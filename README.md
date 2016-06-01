@@ -34,9 +34,9 @@ extern crate coap;
 
 use std::io;
 use coap::packet::*;
-use coap::{CoAPServer, CoAPClient};
+use coap::{CoAPServer, CoAPResponse};
 
-fn request_handler(req: Packet, _resp: CoAPClient) {
+fn request_handler(req: Packet, _resp: CoAPResponse) {
 	println!("Receive request: {:?}", req);
 }
 
@@ -45,7 +45,7 @@ fn main() {
 
 	let mut server = CoAPServer::new(addr).unwrap();
 	server.handle(request_handler).unwrap();
-		
+
 	println!("Server up on {}", addr);
     println!("Press any key to stop...");
 	io::stdin().read_line(&mut String::new()).unwrap();

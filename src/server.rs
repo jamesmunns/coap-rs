@@ -1,12 +1,14 @@
 use std;
 use std::thread;
-use std::net::ToSocketAddrs;
+use std::net::{ToSocketAddrs, SocketAddr};
 use std::sync::mpsc;
 use mio::*;
 use mio::udp::UdpSocket;
 use packet::Packet;
 use client::CoAPClient;
 use threadpool::ThreadPool;
+use std::io::{ErrorKind, Error};
+use packet::PacketType;
 
 const DEFAULT_WORKER_NUM: usize = 4;
 
@@ -18,11 +20,11 @@ pub enum CoAPServerError {
 }
 
 pub trait CoAPHandler: Sync + Send + Copy {
-	fn handle(&self, Packet, CoAPClient);
+	fn handle(&self, Packet, CoAPResponse);
 }
 
-impl<F> CoAPHandler for F where F: Fn(Packet, CoAPClient), F: Sync + Send + Copy {
-	fn handle(&self, request: Packet, response: CoAPClient) {
+impl<F> CoAPHandler for F where F: Fn(Packet, CoAPResponse), F: Sync + Send + Copy {
+	fn handle(&self, request: Packet, response: CoAPResponse) {
 		self(request, response);
 	}
 }
@@ -54,10 +56,11 @@ impl<H: CoAPHandler + 'static> Handler for UdpHandler<H> {
 
 			match self.socket.recv_from(&mut buf) {
 				Ok(Some((nread, src))) => {
+					let socky = self.socket.try_clone().unwrap();
 					self.thread_pool.execute(move || {
 						match Packet::from_bytes(&buf[..nread]) {
 							Ok(packet) => {
-								let client = CoAPClient::new(src).unwrap();
+								let client = CoAPResponse::new(src, socky).unwrap();
 								coap_handler.handle(packet, client);
 							},
 							Err(_) => return
@@ -72,6 +75,67 @@ impl<H: CoAPHandler + 'static> Handler for UdpHandler<H> {
 	fn notify(&mut self, event_loop: &mut EventLoop<UdpHandler<H>>, _: ()) {
         event_loop.shutdown();
     }
+}
+
+pub struct CoAPResponse {
+    socket: UdpSocket,
+    peer_addr: SocketAddr,
+}
+
+impl CoAPResponse {
+		pub fn new<A: ToSocketAddrs>(addr: A, socky: UdpSocket) -> std::io::Result<CoAPResponse> {
+		addr.to_socket_addrs().and_then(|mut iter| {
+			match iter.next() {
+				Some(SocketAddr::V4(a)) => {
+					Ok(CoAPResponse {
+								socket: socky,
+								peer_addr: SocketAddr::V4(a),
+						})
+				},
+				Some(SocketAddr::V6(a)) => {
+					Ok(CoAPResponse {
+								socket: socky,
+								peer_addr: SocketAddr::V6(a),
+						})
+				},
+				None => Err(std::io::Error::new(std::io::ErrorKind::Other, "no address"))
+			}
+		})
+	}
+
+	/// Response the client with the specifc payload.
+	pub fn reply(&self, request_packet: &Packet, payload: Vec<u8>) -> std::io::Result<()> {
+		let mut packet = Packet::new();
+
+		packet.header.set_version(1);
+		let response_type = match request_packet.header.get_type() {
+			PacketType::Confirmable => PacketType::Acknowledgement,
+			PacketType::NonConfirmable => PacketType::NonConfirmable,
+			_ => return Err(Error::new(ErrorKind::InvalidInput, "request type error"))
+		};
+		packet.header.set_type(response_type);
+		packet.header.set_code("2.05");
+		packet.header.set_message_id(request_packet.header.get_message_id());
+		packet.set_token(request_packet.get_token().clone());
+		packet.payload = payload;
+		self.send(&packet)
+	}
+
+	/// Execute a request.
+	pub fn send(&self, packet: &Packet) -> std::io::Result<()> {
+		match packet.to_bytes() {
+			Ok(bytes) => {
+				let size = try!(self.socket.send_to(&bytes[..], &self.peer_addr)).unwrap();
+				if size == bytes.len() {
+					Ok(())
+				} else {
+					Err(Error::new(ErrorKind::Other, "send length error"))
+				}
+			},
+			Err(_) => Err(Error::new(ErrorKind::InvalidInput, "packet error"))
+		}
+	}
+
 }
 
 pub struct CoAPServer {
@@ -177,7 +241,7 @@ mod test {
 	fn test_echo_server() {
 		let mut server = CoAPServer::new("127.0.0.1:5683").unwrap();
 		server.handle(request_handler).unwrap();
-		
+
 		let client = CoAPClient::new("127.0.0.1:5683").unwrap();
 		let mut packet = Packet::new();
 		packet.header.set_version(1);
