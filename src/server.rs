@@ -5,7 +5,6 @@ use std::sync::mpsc;
 use mio::*;
 use mio::udp::UdpSocket;
 use packet::Packet;
-use client::CoAPClient;
 use threadpool::ThreadPool;
 use std::io::{ErrorKind, Error};
 use packet::PacketType;
@@ -229,7 +228,7 @@ mod test {
 	use packet::{Packet, PacketType, OptionType};
 	use client::CoAPClient;
 
-	fn request_handler(req: Packet, resp: CoAPClient) {
+	fn request_handler(req: Packet, resp: CoAPResponse) {
 		let uri_path = req.get_option(OptionType::UriPath);
 		assert!(uri_path.is_some());
 		let uri_path = uri_path.unwrap();

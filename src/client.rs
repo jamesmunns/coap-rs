@@ -182,7 +182,7 @@ mod test {
 		assert!(client.reply(&packet, b"Test".to_vec()).is_err());
 	}
 
-	fn request_handler(_: Packet, _: CoAPClient) {
+	fn request_handler(_: Packet, _: CoAPResponse) {
 	}
 
 	#[test]
