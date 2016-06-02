@@ -254,4 +254,22 @@ mod test {
 		let recv_packet = client.receive().unwrap();
 		assert_eq!(recv_packet.payload, b"test-echo".to_vec());
 	}
+
+	#[test]
+	fn test_echo_server_no_token() {
+		let mut server = CoAPServer::new("127.0.0.1:5683").unwrap();
+		server.handle(request_handler).unwrap();
+
+		let client = CoAPClient::new("127.0.0.1:5683").unwrap();
+		let mut packet = Packet::new();
+		packet.header.set_version(1);
+		packet.header.set_type(PacketType::Confirmable);
+		packet.header.set_code("0.01");
+		packet.header.set_message_id(1);
+		packet.add_option(OptionType::UriPath, b"test-echo".to_vec());
+		client.send(&packet).unwrap();
+
+		let recv_packet = client.receive().unwrap();
+		assert_eq!(recv_packet.payload, b"test-echo".to_vec());
+	}
 }
