@@ -1,15 +1,17 @@
 use std;
 use std::thread;
-use std::net::ToSocketAddrs;
+use std::net::{ToSocketAddrs, SocketAddr};
 use std::sync::mpsc;
 use mio::*;
 use mio::udp::UdpSocket;
 use packet::Packet;
-use client::CoAPClient;
+// use client::CoAPClient;
 use threadpool::ThreadPool;
+use std::io::{ErrorKind, Error};
+use packet::PacketType;
 
 const DEFAULT_WORKER_NUM: usize = 4;
-type TxQueue = mpsc::Sender<Packet>;
+pub type TxQueue = mpsc::Sender<CoAPResponse>;
 
 #[derive(Debug)]
 pub enum CoAPServerError {
@@ -18,13 +20,19 @@ pub enum CoAPServerError {
 	AnotherHandlerIsRunning,
 }
 
-pub trait CoAPHandler: Sync + Send + Copy {
-	fn handle(&self, Packet) -> Option<Packet>;
+#[derive(Debug)]
+pub struct CoAPResponse {
+	pub address: SocketAddr,
+	pub response: Packet
 }
 
-impl<F> CoAPHandler for F where F: Fn(Packet), F: Sync + Send + Copy {
-	fn handle(&self, request: Packet) -> Option<Packet> {
-		return self(request);
+pub trait CoAPHandler: Sync + Send + Copy {
+	fn handle(&self, Packet, SocketAddr, TxQueue);
+}
+
+impl<F> CoAPHandler for F where F: Fn(Packet, SocketAddr, TxQueue), F: Sync + Send + Copy {
+	fn handle(&self, request: Packet, address: SocketAddr, response: TxQueue) {
+		self(request, address, response);
 	}
 }
 
@@ -51,7 +59,9 @@ impl<H: CoAPHandler + 'static> Handler for UdpHandler<H> {
 	type Message = ();
 
 	fn ready(&mut self, _: &mut EventLoop<UdpHandler<H>>, _: Token, events: EventSet) {
+		println!("?");
         if events.is_readable() {
+        	println!("!");
         	let coap_handler = self.coap_handler;
         	let mut buf = [0; 1500];
 
@@ -62,12 +72,7 @@ impl<H: CoAPHandler + 'static> Handler for UdpHandler<H> {
 					self.thread_pool.execute(move || {
 						match Packet::from_bytes(&buf[..nread]) {
 							Ok(packet) => {
-								match coap_handler.handle(packet) {
-									Some(response) => {
-										response_q.send(response);
-									},
-									None => {}
-								};
+								coap_handler.handle(packet, src, response_q);
 							},
 							Err(_) => return
 						};
@@ -121,14 +126,31 @@ impl CoAPServer {
 					Ok(socket) => {
 
 						// Setup and spawn single TX thread
-						let (tx_send, tx_recv) : (TxQueue, mpsc::Receiver<Packet>) = mpsc::channel();
+						let (tx_send, tx_recv) : (TxQueue, mpsc::Receiver<CoAPResponse>) = mpsc::channel();
+						let tx_only = self.socket.try_clone().unwrap();
 
 						let tx_thread = thread::spawn(move || {
 							// TODO - exit detection?
 							loop {
 								match tx_recv.recv() {
-									Ok(response) => {
-										println!("{:?}", response);
+									Ok(q_res) => {
+										println!("{:?}", q_res);
+
+
+
+										match q_res.response.to_bytes() {
+											Ok(bytes) => {
+												let size = tx_only.send_to(&bytes[..], &q_res.address).unwrap();
+												// if size == bytes.len() {
+												// 	Ok(())
+												// } else {
+												// 	Err(Error::new(ErrorKind::Other, "send length error"))
+												// }
+											},
+											Err(_) => {} //Err(Error::new(ErrorKind::InvalidInput, "packet error"))
+										}
+
+
 									},
 									Err(_) => {}
 								}
