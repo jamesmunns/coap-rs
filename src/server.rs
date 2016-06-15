@@ -9,6 +9,7 @@ use client::CoAPClient;
 use threadpool::ThreadPool;
 
 const DEFAULT_WORKER_NUM: usize = 4;
+type TxQueue = mpsc::Sender<Packet>;
 
 #[derive(Debug)]
 pub enum CoAPServerError {
@@ -18,26 +19,28 @@ pub enum CoAPServerError {
 }
 
 pub trait CoAPHandler: Sync + Send + Copy {
-	fn handle(&self, Packet, CoAPClient);
+	fn handle(&self, Packet) -> Option<Packet>;
 }
 
-impl<F> CoAPHandler for F where F: Fn(Packet, CoAPClient), F: Sync + Send + Copy {
-	fn handle(&self, request: Packet, response: CoAPClient) {
-		self(request, response);
+impl<F> CoAPHandler for F where F: Fn(Packet), F: Sync + Send + Copy {
+	fn handle(&self, request: Packet) -> Option<Packet> {
+		return self(request);
 	}
 }
 
 struct UdpHandler<H: CoAPHandler + 'static> {
 	socket: UdpSocket,
 	thread_pool: ThreadPool,
+	tx_sender: TxQueue,
 	coap_handler: H
 }
 
 impl<H: CoAPHandler + 'static> UdpHandler<H> {
-	fn new(socket: UdpSocket, thread_pool: ThreadPool, coap_handler: H) -> UdpHandler<H> {
+	fn new(socket: UdpSocket, thread_pool: ThreadPool, tx_sender: TxQueue, coap_handler: H) -> UdpHandler<H> {
 		UdpHandler {
 			socket: socket,
 			thread_pool: thread_pool,
+			tx_sender: tx_sender,
 			coap_handler: coap_handler
 		}
 	}
@@ -54,11 +57,17 @@ impl<H: CoAPHandler + 'static> Handler for UdpHandler<H> {
 
 			match self.socket.recv_from(&mut buf) {
 				Ok(Some((nread, src))) => {
+					let response_q = self.tx_sender.clone();
+
 					self.thread_pool.execute(move || {
 						match Packet::from_bytes(&buf[..nread]) {
 							Ok(packet) => {
-								let client = CoAPClient::new(src).unwrap();
-								coap_handler.handle(packet, client);
+								match coap_handler.handle(packet) {
+									Some(response) => {
+										response_q.send(response);
+									},
+									None => {}
+								};
 							},
 							Err(_) => return
 						};
@@ -78,6 +87,7 @@ pub struct CoAPServer {
     socket: UdpSocket,
     event_sender: Option<Sender<()>>,
     event_thread: Option<thread::JoinHandle<()>>,
+    tx_thread: Option<thread::JoinHandle<()>>,
     worker_num: usize,
 }
 
@@ -91,6 +101,7 @@ impl CoAPServer {
 						socket: s,
 						event_sender: None,
 						event_thread: None,
+						tx_thread: None,
 						worker_num: DEFAULT_WORKER_NUM,
 					}))
 				},
@@ -108,6 +119,22 @@ impl CoAPServer {
 				let socket = self.socket.try_clone();
 				match socket {
 					Ok(socket) => {
+
+						// Setup and spawn single TX thread
+						let (tx_send, tx_recv) : (TxQueue, mpsc::Receiver<Packet>) = mpsc::channel();
+
+						let tx_thread = thread::spawn(move || {
+							// TODO - exit detection?
+							loop {
+								match tx_recv.recv() {
+									Ok(response) => {
+										println!("{:?}", response);
+									},
+									Err(_) => {}
+								}
+							}
+						});
+
 						let thread = thread::spawn(move || {
 							let thread_pool = ThreadPool::new(worker_num);
 							let mut event_loop = EventLoop::new().unwrap();
@@ -115,13 +142,15 @@ impl CoAPServer {
 
 							tx.send(event_loop.channel()).unwrap();
 
-							event_loop.run(&mut UdpHandler::new(socket, thread_pool, handler)).unwrap();
+							event_loop.run(&mut UdpHandler::new(socket, thread_pool, tx_send, handler)).unwrap();
 						});
 
 						match rx.recv() {
 							Ok(event_sender) => {
+
 								self.event_sender = Some(event_sender);
 								self.event_thread = Some(thread);
+								self.tx_thread = Some(tx_thread);
 								Ok(())
 							},
 							Err(_) => Err(CoAPServerError::EventLoopError)
