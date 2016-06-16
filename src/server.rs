@@ -5,13 +5,11 @@ use std::sync::mpsc;
 use mio::*;
 use mio::udp::UdpSocket;
 use packet::Packet;
-// use client::CoAPClient;
 use threadpool::ThreadPool;
-use std::io::{ErrorKind, Error};
-use packet::PacketType;
 
 const DEFAULT_WORKER_NUM: usize = 4;
 pub type TxQueue = mpsc::Sender<CoAPResponse>;
+pub type RxQueue = mpsc::Receiver<CoAPResponse>;
 
 #[derive(Debug)]
 pub enum CoAPServerError {
@@ -27,12 +25,12 @@ pub struct CoAPResponse {
 }
 
 pub trait CoAPHandler: Sync + Send + Copy {
-	fn handle(&self, Packet, SocketAddr, TxQueue);
+	fn handle(&self, Packet) -> Option<Packet>;
 }
 
-impl<F> CoAPHandler for F where F: Fn(Packet, SocketAddr, TxQueue), F: Sync + Send + Copy {
-	fn handle(&self, request: Packet, address: SocketAddr, response: TxQueue) {
-		self(request, address, response);
+impl<F> CoAPHandler for F where F: Fn(Packet) -> Option<Packet>, F: Sync + Send + Copy {
+	fn handle(&self, request: Packet) -> Option<Packet> {
+		return self(request);
 	}
 }
 
@@ -72,7 +70,15 @@ impl<H: CoAPHandler + 'static> Handler for UdpHandler<H> {
 					self.thread_pool.execute(move || {
 						match Packet::from_bytes(&buf[..nread]) {
 							Ok(packet) => {
-								coap_handler.handle(packet, src, response_q);
+								match coap_handler.handle(packet) {
+									Some(response) => {
+										response_q.send(CoAPResponse{
+											address: src,
+											response: response
+										}).unwrap();
+									},
+									None => {}
+								};
 							},
 							Err(_) => return
 						};
@@ -115,7 +121,7 @@ impl CoAPServer {
 		})
 	}
 
-	/// Starts handling requests with the handler.
+	/// Starts handling requests with the handler
 	pub fn handle<H: CoAPHandler + 'static>(&mut self, handler: H) -> Result<(), CoAPServerError> {
 		match self.event_sender {
 			None => {
@@ -124,39 +130,16 @@ impl CoAPServer {
 				let socket = self.socket.try_clone();
 				match socket {
 					Ok(socket) => {
-
-						// Setup and spawn single TX thread
-						let (tx_send, tx_recv) : (TxQueue, mpsc::Receiver<CoAPResponse>) = mpsc::channel();
+						let (tx_send, tx_recv) : (TxQueue, RxQueue) = mpsc::channel();
 						let tx_only = self.socket.try_clone().unwrap();
 
+						// Setup and spawn single TX thread
 						let tx_thread = thread::spawn(move || {
-							// TODO - exit detection?
-							loop {
-								match tx_recv.recv() {
-									Ok(q_res) => {
-										println!("{:?}", q_res);
-
-
-
-										match q_res.response.to_bytes() {
-											Ok(bytes) => {
-												let size = tx_only.send_to(&bytes[..], &q_res.address).unwrap();
-												// if size == bytes.len() {
-												// 	Ok(())
-												// } else {
-												// 	Err(Error::new(ErrorKind::Other, "send length error"))
-												// }
-											},
-											Err(_) => {} //Err(Error::new(ErrorKind::InvalidInput, "packet error"))
-										}
-
-
-									},
-									Err(_) => {}
-								}
-							}
+							transmit_handler(tx_recv, tx_only);
 						});
 
+						// Setup and spawn event loop thread, which will spawn
+						//   children threads which handle incomining requests
 						let thread = thread::spawn(move || {
 							let thread_pool = ThreadPool::new(worker_num);
 							let mut event_loop = EventLoop::new().unwrap();
@@ -167,9 +150,9 @@ impl CoAPServer {
 							event_loop.run(&mut UdpHandler::new(socket, thread_pool, tx_send, handler)).unwrap();
 						});
 
+						// Ensure threads started successfully
 						match rx.recv() {
 							Ok(event_sender) => {
-
 								self.event_sender = Some(event_sender);
 								self.event_thread = Some(thread);
 								self.tx_thread = Some(tx_thread);
@@ -200,6 +183,39 @@ impl CoAPServer {
 	/// Set the number of threads for handling requests
 	pub fn set_worker_num(&mut self, worker_num: usize) {
 		self.worker_num = worker_num;
+	}
+}
+
+fn transmit_handler(tx_recv: RxQueue, tx_only: UdpSocket) {
+	// Note! We should only transmit with this UDP Socket
+	loop {
+		match tx_recv.recv() {
+			Ok(q_res) => {
+				println!("{:?}", q_res);
+
+				match q_res.response.to_bytes() {
+					Ok(bytes) => {
+						let result = tx_only.send_to(&bytes[..], &q_res.address).unwrap();
+						match result {
+							Some(size) => {
+								if size != bytes.len() {
+									panic!("TX Size mismatch!");
+								}
+							},
+							None => {
+								panic!("TX Failure");
+							}
+						}
+					},
+					Err(_) => {
+						panic!("TX Serialization Failure!")
+					}
+				}
+
+
+			},
+			Err(_) => {}
+		}
 	}
 }
 
