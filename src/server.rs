@@ -123,48 +123,56 @@ impl CoAPServer {
 
 	/// Starts handling requests with the handler
 	pub fn handle<H: CoAPHandler + 'static>(&mut self, handler: H) -> Result<(), CoAPServerError> {
+		let socket;
+
+		// Early return error checking
 		match self.event_sender {
-			None => {
-				let worker_num = self.worker_num;
-				let (tx, rx) = mpsc::channel();
-				let socket = self.socket.try_clone();
-				match socket {
-					Ok(socket) => {
-						let (tx_send, tx_recv) : (TxQueue, RxQueue) = mpsc::channel();
-						let tx_only = self.socket.try_clone().unwrap();
-
-						// Setup and spawn single TX thread
-						let tx_thread = thread::spawn(move || {
-							transmit_handler(tx_recv, tx_only);
-						});
-
-						// Setup and spawn event loop thread, which will spawn
-						//   children threads which handle incomining requests
-						let thread = thread::spawn(move || {
-							let thread_pool = ThreadPool::new(worker_num);
-							let mut event_loop = EventLoop::new().unwrap();
-							event_loop.register(&socket, Token(0), EventSet::readable(), PollOpt::edge()).unwrap();
-
-							tx.send(event_loop.channel()).unwrap();
-
-							event_loop.run(&mut UdpHandler::new(socket, thread_pool, tx_send, handler)).unwrap();
-						});
-
-						// Ensure threads started successfully
-						match rx.recv() {
-							Ok(event_sender) => {
-								self.event_sender = Some(event_sender);
-								self.event_thread = Some(thread);
-								self.tx_thread = Some(tx_thread);
-								Ok(())
-							},
-							Err(_) => Err(CoAPServerError::EventLoopError)
-						}
-					},
-					Err(_) => Err(CoAPServerError::NetworkError),
-				}
+			None => {},
+			Some(_) => {
+				return Err(CoAPServerError::AnotherHandlerIsRunning);
+			}
+		}
+		match self.socket.try_clone() {
+			Ok(good_socket) => {
+				socket = good_socket
 			},
-			Some(_) => Err(CoAPServerError::AnotherHandlerIsRunning),
+			Err(_) => {
+				return Err(CoAPServerError::NetworkError);
+			},
+		}
+
+		// Create resources
+		let worker_num = self.worker_num;
+		let (tx, rx) = mpsc::channel();
+		let (tx_send, tx_recv) : (TxQueue, RxQueue) = mpsc::channel();
+		let tx_only = self.socket.try_clone().unwrap();
+
+		// Setup and spawn single TX thread
+		let tx_thread = thread::spawn(move || {
+			transmit_handler(tx_recv, tx_only);
+		});
+
+		// Setup and spawn event loop thread, which will spawn
+		//   children threads which handle incomining requests
+		let thread = thread::spawn(move || {
+			let thread_pool = ThreadPool::new(worker_num);
+			let mut event_loop = EventLoop::new().unwrap();
+			event_loop.register(&socket, Token(0), EventSet::readable(), PollOpt::edge()).unwrap();
+
+			tx.send(event_loop.channel()).unwrap();
+
+			event_loop.run(&mut UdpHandler::new(socket, thread_pool, tx_send, handler)).unwrap();
+		});
+
+		// Ensure threads started successfully
+		match rx.recv() {
+			Ok(event_sender) => {
+				self.event_sender = Some(event_sender);
+				self.event_thread = Some(thread);
+				self.tx_thread = Some(tx_thread);
+				Ok(())
+			},
+			Err(_) => Err(CoAPServerError::EventLoopError)
 		}
 	}
 
