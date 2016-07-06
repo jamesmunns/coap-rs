@@ -5,7 +5,7 @@ pub struct HeaderRaw {
     message_id: u16,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Header {
     ver_type_tkl: u8,
     pub code: MessageClass,

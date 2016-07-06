@@ -2,7 +2,7 @@ use message::IsMessage;
 use message::packet::Packet;
 use message::header::{Header, MessageType, MessageClass, Responses};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CoAPResponse {
     pub message: Packet,
 }

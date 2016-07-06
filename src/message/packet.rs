@@ -46,7 +46,7 @@ pub enum ParseError {
     InvalidOptionLength,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Packet {
     pub header: header::Header,
     token: Vec<u8>,

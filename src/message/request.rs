@@ -4,7 +4,7 @@ use message::packet::Packet;
 use message::header::Header;
 use std::net::SocketAddr;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CoAPRequest {
     pub message: Packet,
     pub response: Option<CoAPResponse>,
