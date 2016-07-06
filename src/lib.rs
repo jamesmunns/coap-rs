@@ -85,7 +85,9 @@ pub use message::packet::CoAPOption;
 pub use message::request::CoAPRequest;
 pub use message::response::CoAPResponse;
 pub use server::CoAPServer;
+pub use router::CoAPRouter;
 
 pub mod message;
 pub mod client;
 pub mod server;
+pub mod router;

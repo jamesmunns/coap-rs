@@ -12,7 +12,7 @@ pub struct Header {
     message_id: u16,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum MessageClass {
     Empty,
     RequestType(Requests),
@@ -20,7 +20,7 @@ pub enum MessageClass {
     Reserved,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum Requests {
     Get,
     Post,
@@ -28,7 +28,7 @@ pub enum Requests {
     Delete,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Responses {
     // 200 Codes
     Created,

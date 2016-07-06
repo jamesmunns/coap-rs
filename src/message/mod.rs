@@ -4,11 +4,14 @@ pub mod response;
 pub mod packet;
 
 use message::packet::Packet;
-use message::header::Header;
+use message::header::{Header, MessageClass};
 
 use std::collections::LinkedList;
 
 pub trait IsMessage {
+    // Accessor methods are required for this trait because trait method implementations are not
+    //   capable of accessing members directly (as of July 2016). These methods could be removed
+    //   if this language feature is implemented
     fn get_message(&self) -> &Packet;
     fn get_mut_message(&mut self) -> &mut Packet;
     fn get_header(&self) -> &Header;
@@ -56,5 +59,11 @@ pub trait IsMessage {
     }
     fn set_code(&mut self, code: &str) {
         self.get_mut_message().header.set_code(code);
+    }
+    fn get_class(&self) -> MessageClass {
+        return self.get_message().header.code.clone();
+    }
+    fn set_class(&mut self, class: MessageClass) {
+        self.get_mut_message().header.code = class;
     }
 }
