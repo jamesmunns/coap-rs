@@ -7,6 +7,8 @@ use message::IsMessage;
 
 pub type ReqHandler = fn(CoAPRequest) -> Option<CoAPResponse>;
 type HandleDispatch = HashMap<String, ReqHandler>;
+
+#[derive(Clone)]
 pub struct CoAPRouter {
     map: HashMap<Requests, HandleDispatch>,
 }
@@ -34,7 +36,7 @@ impl CoAPRouter {
         self.route(Requests::Delete, endpoint, handler);
     }
 
-    pub fn handler(&self, req: CoAPRequest) -> Option<CoAPResponse> {
+    pub fn handle(&self, req: CoAPRequest) -> Option<CoAPResponse> {
         // Obtain first URI, if there is one
         //   NOTE: only the first URI is handled. Others ignored
         req.get_option(CoAPOption::UriPath)
@@ -98,10 +100,10 @@ mod test {
         let mut rtr = CoAPRouter::new();
         rtr.get(&"foo".to_string(), echo_handler);
 
-        assert!(rtr.handler(req_1).is_some());
-        assert!(rtr.handler(req_2).is_none());
-        assert!(rtr.handler(req_3).is_none());
+        assert!(rtr.handle(req_1).is_some());
+        assert!(rtr.handle(req_2).is_none());
+        assert!(rtr.handle(req_3).is_none());
 
-        assert_eq!(b"foo".to_vec(), rtr.handler(req_4).unwrap().message.payload);
+        assert_eq!(b"foo".to_vec(), rtr.handle(req_4).unwrap().message.payload);
     }
 }

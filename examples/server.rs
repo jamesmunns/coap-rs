@@ -14,15 +14,15 @@ fn request_handler(request: CoAPRequest) -> Option<CoAPResponse> {
 }
 
 fn main() {
-    let addr = "127.0.0.1:5683";
+    // let addr = "127.0.0.1:5683";
 
-    let mut server = CoAPServer::new(addr).unwrap();
-    server.handle(request_handler).unwrap();
+    // let mut server = CoAPServer::new(addr).unwrap();
+    // server.handle(request_handler).unwrap();
 
-    println!("Server up on {}", addr);
-    println!("Press any key to stop...");
+    // println!("Server up on {}", addr);
+    // println!("Press any key to stop...");
 
-    io::stdin().read_line(&mut String::new()).unwrap();
+    // io::stdin().read_line(&mut String::new()).unwrap();
 
-    println!("Server shutdown");
+    // println!("Server shutdown");
 }

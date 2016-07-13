@@ -147,38 +147,38 @@ impl CoAPClient {
 }
 
 
-#[cfg(test)]
-mod test {
-    use super::*;
-    use std::time::Duration;
-    use std::io::ErrorKind;
-    use message::request::CoAPRequest;
-    use message::response::CoAPResponse;
-    use server::CoAPServer;
+// #[cfg(test)]
+// mod test {
+//     use super::*;
+//     use std::time::Duration;
+//     use std::io::ErrorKind;
+//     use message::request::CoAPRequest;
+//     use message::response::CoAPResponse;
+//     use server::CoAPServer;
 
-    #[test]
-    fn test_request_error_url() {
-        assert!(CoAPClient::request("http://127.0.0.1").is_err());
-        assert!(CoAPClient::request("coap://127.0.0.").is_err());
-        assert!(CoAPClient::request("127.0.0.1").is_err());
-    }
+//     #[test]
+//     fn test_request_error_url() {
+//         assert!(CoAPClient::request("http://127.0.0.1").is_err());
+//         assert!(CoAPClient::request("coap://127.0.0.").is_err());
+//         assert!(CoAPClient::request("127.0.0.1").is_err());
+//     }
 
-    fn request_handler(_: CoAPRequest) -> Option<CoAPResponse> {
-        None
-    }
+//     fn request_handler(_: CoAPRequest) -> Option<CoAPResponse> {
+//         None
+//     }
 
-    #[test]
-    fn test_request_timeout() {
-        let mut server = CoAPServer::new("127.0.0.1:5684").unwrap();
-        server.handle(request_handler).unwrap();
+//     #[test]
+//     fn test_request_timeout() {
+//         let mut server = CoAPServer::new("127.0.0.1:5684").unwrap();
+//         server.handle(request_handler).unwrap();
 
-        let error = CoAPClient::request_with_timeout("coap://127.0.0.1:5684/Rust",
-                                                     Some(Duration::new(1, 0)))
-            .unwrap_err();
-        if cfg!(windows) {
-            assert_eq!(error.kind(), ErrorKind::TimedOut);
-        } else {
-            assert_eq!(error.kind(), ErrorKind::WouldBlock);
-        }
-    }
-}
+//         let error = CoAPClient::request_with_timeout("coap://127.0.0.1:5684/Rust",
+//                                                      Some(Duration::new(1, 0)))
+//             .unwrap_err();
+//         if cfg!(windows) {
+//             assert_eq!(error.kind(), ErrorKind::TimedOut);
+//         } else {
+//             assert_eq!(error.kind(), ErrorKind::WouldBlock);
+//         }
+//     }
+// }
